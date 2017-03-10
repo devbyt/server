@@ -780,10 +780,12 @@ private:
 
 class sp_lex_cursor: public sp_lex_local, public Query_arena
 {
+  LEX_STRING m_cursor_name;
 public:
   sp_lex_cursor(THD *thd, const LEX *oldlex, MEM_ROOT *mem_root_arg)
    :sp_lex_local(thd, oldlex),
-    Query_arena(mem_root_arg, STMT_INITIALIZED_FOR_SP)
+    Query_arena(mem_root_arg, STMT_INITIALIZED_FOR_SP),
+    m_cursor_name(null_lex_str)
   { }
   sp_lex_cursor(THD *thd, const LEX *oldlex)
    :sp_lex_local(thd, oldlex),
@@ -811,6 +813,8 @@ public:
     thd->free_list= NULL;
     return false;
   }
+  const LEX_STRING *cursor_name() const { return &m_cursor_name; }
+  void set_cursor_name(const LEX_STRING &name) { m_cursor_name= name; }
 };
 
 
@@ -982,6 +986,11 @@ public:
   void disable_query_cache()
   {
     m_lex->safe_to_cache_query= 0;
+  }
+
+  const LEX_STRING *cursor_name() const
+  {
+    return m_lex->cursor_name();
   }
 private:
 

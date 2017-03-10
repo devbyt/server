@@ -5457,8 +5457,58 @@ sp_variable *LEX::sp_add_for_loop_variable(THD *thd, const LEX_STRING name,
   */
   spvar->field_def.pack_flag= (FIELDFLAG_NUMBER |
                                f_settype((uint) MYSQL_TYPE_LONGLONG));
-  if (sp_variable_declarations_finalize(thd, 1, NULL, NULL, value))
+
+  if (!value && !(value= new (thd->mem_root) Item_null(thd)))
     return NULL;
+
+  spvar->default_value= value;
+  sp_instr_set *is= new (this->thd->mem_root)
+                    sp_instr_set(sphead->instructions(),
+                                 spcont, spvar->offset, value,
+                                 this, true);
+  if (is == NULL || sphead->add_instr(is))
+    return NULL;
+  spcont->declare_var_boundary(0);
+  return spvar;
+}
+
+
+sp_variable *
+LEX::sp_add_for_loop_cursor_variable(THD *thd,
+                                     const LEX_STRING name,
+                                     const sp_pcursor *pcursor,
+                                     uint coffset)
+{
+  sp_variable *spvar= spcont->add_variable(thd, name);
+  spcont->declare_var_boundary(1);
+  spvar->field_def.field_name= spvar->name.str;
+  spvar->default_value= new (thd->mem_root) Item_null(thd);
+
+  Cursor_rowtype *ref;
+  if (!(ref= new (thd->mem_root) Cursor_rowtype(coffset)))
+    return NULL;
+  spvar->field_def.set_cursor_rowtype_ref(ref);
+
+  sp_instr *instr_copy_struct=
+    new (thd->mem_root) sp_instr_cursor_copy_struct(sphead->instructions(),
+                                                    spcont, pcursor->lex(),
+                                                    spvar->offset);
+  if (instr_copy_struct == NULL || sphead->add_instr(instr_copy_struct))
+    return NULL;
+
+  sp_instr_copen *instr_copen=
+    new (thd->mem_root) sp_instr_copen(sphead->instructions(), spcont, coffset);
+  if (instr_copen == NULL || sphead->add_instr(instr_copen))
+    return NULL;
+
+  sp_instr_cfetch *instr_cfetch=
+    new (thd->mem_root) sp_instr_cfetch(sphead->instructions(),
+                                        spcont, coffset);
+  if (instr_cfetch == NULL || sphead->add_instr(instr_cfetch))
+    return NULL;
+  instr_cfetch->add_to_varlist(spvar);
+
+  spcont->declare_var_boundary(0);
   return spvar;
 }
 
@@ -5494,13 +5544,90 @@ bool LEX::sp_for_loop_condition(THD *thd, const Lex_for_loop_st &loop)
 /**
   Generate the FOR LOOP condition code in its own lex
 */
-bool LEX::sp_for_loop_index_and_bounds(THD *thd, const Lex_for_loop_st &loop)
+bool LEX::sp_for_loop_intrange_condition_test(THD *thd,
+                                              const Lex_for_loop_st &loop)
 {
   spcont->set_for_loop(loop);
   sphead->reset_lex(thd);
   if (thd->lex->sp_for_loop_condition(thd, loop))
     return true;
   return thd->lex->sphead->restore_lex(thd);
+}
+
+
+bool LEX::sp_for_loop_cursor_condition_test(THD *thd,
+                                            const Lex_for_loop_st &loop)
+{
+  spcont->set_for_loop(loop);
+  sphead->reset_lex(thd);
+  const LEX_STRING *cursor_name= spcont->find_cursor(loop.m_cursor_offset);
+  Item *expr= new (thd->mem_root) Item_func_cursor_found(thd, *cursor_name,
+                                                         loop.m_cursor_offset);
+  if (thd->lex->sp_while_loop_expression(thd, expr))
+    return true;
+  return thd->lex->sphead->restore_lex(thd);
+}
+
+
+bool LEX::sp_for_loop_intrange_declarations(THD *thd, Lex_for_loop_st *loop,
+                                            const LEX_STRING &index,
+                                            const Lex_for_loop_bounds_st &bounds)
+{
+  if (!(loop->m_index=
+        bounds.m_index->sp_add_for_loop_variable(thd, index,
+                                                 bounds.m_index->get_item())))
+    return true;
+  if (!(loop->m_upper_bound=
+        bounds.m_upper_bound->sp_add_for_loop_upper_bound(thd,
+                                           bounds.m_upper_bound->get_item())))
+     return true;
+  loop->m_direction= bounds.m_direction;
+  loop->m_implicit_cursor= 0;
+  return false;
+}
+
+
+bool LEX::sp_for_loop_cursor_declarations(THD *thd,
+                                          Lex_for_loop_st *loop,
+                                          const LEX_STRING &index,
+                                          const Lex_for_loop_bounds_st &bounds)
+{
+  Item *item= bounds.m_index->get_item();
+  Item_splocal *item_splocal;
+  Item_field *item_field;
+  LEX_STRING name;
+  uint coffs;
+  const sp_pcursor *pcursor;
+
+  if ((item_splocal= item->get_item_splocal()))
+  {
+    name= item_splocal->m_name;
+  }
+  else if ((item_field= item->type() == Item::FIELD_ITEM ?
+                        static_cast<Item_field *>(item) : NULL) &&
+           item_field->table_name == NULL)
+  {
+    name.str= (char *) item_field->field_name;
+    name.length= strlen(item_field->field_name);
+  }
+  else
+  {
+    thd->parse_error();
+    return true;
+  }
+  if (!(pcursor= spcont->find_cursor(name, &coffs, false)))
+  {
+    my_error(ER_SP_CURSOR_MISMATCH, MYF(0), name.str);
+    return true;
+  }
+  if (!(loop->m_index= sp_add_for_loop_cursor_variable(thd, index,
+                                                       pcursor, coffs)))
+    return true;
+  loop->m_upper_bound= NULL;
+  loop->m_direction= bounds.m_direction;
+  loop->m_cursor_offset= coffs;
+  loop->m_implicit_cursor= bounds.m_implicit_cursor;
+  return false;
 }
 
 
@@ -5528,7 +5655,7 @@ bool LEX::sp_for_loop_increment(THD *thd, const Lex_for_loop_st &loop)
 }
 
 
-bool LEX::sp_for_loop_finalize(THD *thd, const Lex_for_loop_st &loop)
+bool LEX::sp_for_loop_intrange_finalize(THD *thd, const Lex_for_loop_st &loop)
 {
   sphead->reset_lex(thd);
 
@@ -5544,6 +5671,18 @@ bool LEX::sp_for_loop_finalize(THD *thd, const Lex_for_loop_st &loop)
 }
 
 
+bool LEX::sp_for_loop_cursor_finalize(THD *thd, const Lex_for_loop_st &loop)
+{
+  sp_instr_cfetch *instr=
+    new (thd->mem_root) sp_instr_cfetch(sphead->instructions(),
+                                        spcont, loop.m_cursor_offset);
+  if (instr == NULL || sphead->add_instr(instr))
+    return true;
+  instr->add_to_varlist(loop.m_index);
+  // Generate a jump to the beginning of the loop
+  return sp_while_loop_finalize(thd);
+}
+
 /***************************************************************************/
 
 bool LEX::sp_declare_cursor(THD *thd, const LEX_STRING name,
@@ -5558,6 +5697,7 @@ bool LEX::sp_declare_cursor(THD *thd, const LEX_STRING name,
     my_error(ER_SP_DUP_CURS, MYF(0), name.str);
     return true;
   }
+  cursor_stmt->set_cursor_name(name);
   i= new (thd->mem_root)
        sp_instr_cpush(sphead->instructions(), spcont, cursor_stmt,
                       spcont->current_cursor_count());

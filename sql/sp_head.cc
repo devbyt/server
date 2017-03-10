@@ -4243,7 +4243,10 @@ void
 sp_instr_cursor_copy_struct::print(String *str)
 {
   sp_variable *var= m_ctx->find_variable(m_var);
+  const LEX_STRING *name= m_lex_keeper.cursor_name();
   str->append(STRING_WITH_LEN("cursor_copy_struct "));
+  str->append(name->str, name->length);
+  str->append(' ');
   str->append(var->name.str, var->name.length);
   str->append('@');
   str->append_ulonglong(m_var);
