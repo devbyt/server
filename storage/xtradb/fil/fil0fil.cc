@@ -6251,8 +6251,15 @@ _fil_io(
 			mutex_exit(&fil_system->mutex);
 			if (mode == OS_AIO_NORMAL) {
 				ut_a(space->purpose == FIL_TABLESPACE);
-				buf_page_io_complete(static_cast<buf_page_t *>
-						     (message));
+				dberr_t err = buf_page_io_complete(static_cast<buf_page_t *>
+					(message));
+
+				if (err != DB_SUCCESS) {
+					ib_logf(IB_LOG_LEVEL_ERROR,
+						"Write operation failed for tablespace %s ("
+						ULINTPF ") offset " ULINTPF " error=%d.",
+						space->name, space->id, byte_offset, err);
+				}
 			}
 		}
 
@@ -6355,6 +6362,8 @@ fil_aio_wait(
 	mutex_enter(&fil_system->mutex);
 
 	fil_node_complete_io(fil_node, fil_system, type);
+	ulint purpose = fil_node->space->purpose;
+	space_id = fil_node->space->id;
 
 	mutex_exit(&fil_system->mutex);
 
@@ -6366,9 +6375,20 @@ fil_aio_wait(
 	deadlocks in the i/o system. We keep tablespace 0 data files always
 	open, and use a special i/o thread to serve insert buffer requests. */
 
-	if (fil_node->space->purpose == FIL_TABLESPACE) {
+	if (purpose == FIL_TABLESPACE) {
 		srv_set_io_thread_op_info(segment, "complete io for buf page");
-		buf_page_io_complete(static_cast<buf_page_t*>(message));
+		buf_page_t* bpage = static_cast<buf_page_t*>(message);
+		ulint offset = bpage ? bpage->offset : ULINT_UNDEFINED;
+
+		dberr_t err = buf_page_io_complete(bpage);
+
+		if (err != DB_SUCCESS) {
+			ib_logf(IB_LOG_LEVEL_FATAL,
+				"%s operation failed for tablespace "
+				ULINTPF " offset " ULINTPF " error=%s (%d).",
+				type == OS_FILE_WRITE ? "Write" : "Read",
+				space_id, offset, ut_strerr(err),err);
+		}
 	} else {
 		srv_set_io_thread_op_info(segment, "complete io for log");
 		log_io_complete(static_cast<log_group_t*>(message));

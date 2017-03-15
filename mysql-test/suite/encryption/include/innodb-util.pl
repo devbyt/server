@@ -4,8 +4,11 @@
 # All the tables must be in the same database, you can call it like so:
 # ib_backup_tablespaces("test", "t1", "blah", ...).
 
+use strict;
+use warnings;
 use File::Copy;
 use File::Spec;
+use Fcntl qw(:DEFAULT :seek);
 
 sub ib_normalize_path {
     my ($path) = @_;
@@ -122,5 +125,34 @@ sub ib_restore_ibd_files {
     foreach my $table (@tables) {
         print "restore: $table .ibd file\n";
         ib_restore_ibd_file($tmpd, $datadir, $db, $table);
+    }
+}
+
+sub ib_corrupt_tablespace {
+    my ($db, $table) = @_;
+    my $datadir = $ENV{'MYSQLD_DATADIR'};
+    my $page_size = $ENV{'INNODB_PAGE_SIZE'};
+    my $ibd_file = sprintf("%s%s/%s.ibd", $datadir,$db,$table);
+    print "file: $ibd_file $page_size\n";
+#   We try to corrupt FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION field
+    my $len;
+
+    sysopen IBD_FILE, $ibd_file, O_RDWR || die "Unable to open $ibd_file";
+
+    while ($len = sysread(IBD_FILE, $_, $page_size))
+    {
+	sysseek(IBD_FILE, -$len, SEEK_CUR);
+        substr($_, 26, 8) = pack("N",0xdeadbeef);
+	print "Corrupted page with $chunk\n";
+	syswrite(IBD_FILE, $_, $len);
+    }
+    close IBD_FILE;
+}
+
+sub ib_corrupt_tablespaces {
+    my ($db, @tables) = @_;
+    foreach my $table (@tables) {
+        print "corrupt: $table\n";
+        ib_corrupt_tablespace($db, $table);
     }
 }

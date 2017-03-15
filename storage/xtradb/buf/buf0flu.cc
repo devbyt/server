@@ -992,7 +992,10 @@ buf_flush_write_block_low(
 	if (sync) {
 		ut_ad(flush_type == BUF_FLUSH_SINGLE_PAGE);
 		fil_flush(buf_page_get_space(bpage));
-		buf_page_io_complete(bpage);
+		dberr_t err = buf_page_io_complete(bpage);
+
+		/* This is write path, encryption should not fail here. */
+		ut_ad(err == DB_SUCCESS);
 	}
 
 	/* Increment the counter of I/O operations used

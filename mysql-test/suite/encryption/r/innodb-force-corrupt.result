@@ -13,21 +13,30 @@ CALL mtr.add_suppression("InnoDB: fix the corruption by dumping, dropping, and r
 CALL mtr.add_suppression("InnoDB: the corrupt table. You can use CHECK");
 CALL mtr.add_suppression("InnoDB: TABLE to scan your table for corruption.");
 CALL mtr.add_suppression("InnoDB: See also .* about forcing recovery.");
-# Create and populate the table to be corrupted
-CREATE TABLE t1 (a INT AUTO_INCREMENT PRIMARY KEY, b TEXT) ENGINE=InnoDB;
-INSERT INTO t1 (b) VALUES ('corrupt me');
-INSERT INTO t1 (b) VALUES ('corrupt me');
-# Backup the t1.ibd before corrupting
-# Corrupt the table
-Munged a string.
-Munged a string.
-SET DEBUG_DBUG = '+d,innodb_page_corruption_retries';
+CALL mtr.add_suppression("InnoDB: However key management plugin or used key_version 3221605118 is not found or used encryption algorithm or method does not match.");
+CALL mtr.add_suppression("Marking tablespace as missing. You may drop this table or install correct key management plugin and key file.");
+CALL mtr.add_suppression("InnoDB: Block in space_id .* in file .* encrypted.");
+SET GLOBAL innodb_file_format = `Barracuda`;
+SET GLOBAL innodb_file_per_table = ON;
+set global innodb_compression_algorithm = 1;
+# Create and populate tables to be corrupted
+CREATE TABLE t1 (a INT AUTO_INCREMENT PRIMARY KEY, b TEXT,c char(200)) ENGINE=InnoDB encrypted=yes;
+CREATE TABLE t2 (a INT AUTO_INCREMENT PRIMARY KEY, b TEXT,c char(200)) ENGINE=InnoDB row_format=compressed encrypted=yes;
+CREATE TABLE t3 (a INT AUTO_INCREMENT PRIMARY KEY, b TEXT, c char(200)) ENGINE=InnoDB page_compressed=yes encrypted=yes;
+INSERT INTO t1 (b,c) VALUES ('corrupt me','secret');
+BEGIN;
+INSERT INTO t1 (b,c) VALUES ('corrupt me','moresecretmoresecret');
+INSERT INTO t2 select * from t1;
+INSERT INTO t3 select * from t1;
+COMMIT;
+# Backup tables before corrupting
+# Corrupt tables
 # Write file to make mysql-test-run.pl expect the "crash", but don't
 # start it until it's told to
 # The below SELECT query will crash the server because some pages
 # on the disk are corrupted
 SELECT * FROM t1;
-ERROR HY000: Lost connection to MySQL server during query
+SELECT * FROM t2;
+SELECT * FROM t3;
 # Restore the original t1.ibd
-# Cleanup
-DROP TABLE t1;
+DROP TABLE t1,t2,t3;

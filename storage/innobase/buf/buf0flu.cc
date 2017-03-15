@@ -956,7 +956,10 @@ buf_flush_write_block_low(
 
 		/* true means we want to evict this page from the
 		LRU list as well. */
-		buf_page_io_complete(bpage, true);
+		dberr_t err = buf_page_io_complete(bpage, true);
+
+		/* This is write path, encryption should not fail here. */
+		ut_ad(err == DB_SUCCESS);
 	}
 
 	/* Increment the counter of I/O operations used

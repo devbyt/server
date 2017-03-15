@@ -920,7 +920,11 @@ dict_stats_update_transient_for_index(
 
 		index->stat_n_leaf_pages = size;
 
-		btr_estimate_number_of_different_key_vals(index);
+		/* Do not continue if table decryption has failed or
+		table is already marked as corrupted. */
+		if (!index->table->is_encrypted && !index->table->corrupted) {
+			btr_estimate_number_of_different_key_vals(index);
+		}
 	}
 }
 
@@ -974,8 +978,9 @@ dict_stats_update_transient(
 			continue;
 		}
 
-		/* Do not continue if table decryption has failed. */
-		if (index->table->is_encrypted) {
+		/* Do not continue if table decryption has failed or
+		table is already marked as corrupted. */
+		if (index->table->is_encrypted || index->table->corrupted) {
 			break;
 		}
 

@@ -10232,6 +10232,14 @@ ha_innobase::general_fetch(
 
 	innobase_srv_conc_enter_innodb(prebuilt->trx);
 
+	if (prebuilt->table->corrupted) {
+		DBUG_RETURN(HA_ERR_CRASHED);
+	}
+
+	if (prebuilt->table->is_encrypted) {
+		DBUG_RETURN(HA_ERR_DECRYPTION_FAILED);
+	}
+
 	ret = row_search_for_mysql(
 		(byte*) buf, 0, prebuilt, match_mode, direction);
 

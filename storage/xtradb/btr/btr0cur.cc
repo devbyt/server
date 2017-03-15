@@ -3,7 +3,7 @@
 Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2015, MariaDB Corporation.
+Copyright (c) 2015, 2017, MariaDB Corporation.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -4361,6 +4361,11 @@ btr_estimate_number_of_different_key_vals(
 		for an index where there is just one key value. */
 
 		page = btr_cur_get_page(&cursor);
+
+		if (index->table->is_encrypted || index->table->corrupted) {
+			mtr_commit(&mtr);
+			goto exit_loop;
+		}
 
 		SRV_CORRUPT_TABLE_CHECK(page, goto exit_loop;);
 		DBUG_EXECUTE_IF("ib_corrupt_page_while_stats_calc",

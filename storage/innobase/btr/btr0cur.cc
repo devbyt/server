@@ -3,7 +3,7 @@
 Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2015, MariaDB Corporation.
+Copyright (c) 2015, 2017, MariaDB Corporation.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -872,7 +872,7 @@ btr_cur_open_at_index_side_func(
 	ulint		offsets_[REC_OFFS_NORMAL_SIZE];
 	ulint*		offsets		= offsets_;
 	dberr_t		err = DB_SUCCESS;
-	
+
 	rec_offs_init(offsets_);
 
 	estimate = latch_mode & BTR_ESTIMATE;
@@ -4096,6 +4096,11 @@ btr_estimate_number_of_different_key_vals(
 
 		page = btr_cur_get_page(&cursor);
 
+		if (index->table->is_encrypted || index->table->corrupted) {
+			mtr_commit(&mtr);
+			goto exit_loop;
+		}
+
 		rec = page_rec_get_next(page_get_infimum_rec(page));
 
 		if (!page_rec_is_supremum(rec)) {
@@ -4180,6 +4185,7 @@ btr_estimate_number_of_different_key_vals(
 		mtr_commit(&mtr);
 	}
 
+exit_loop:
 	/* If we saw k borders between different key values on
 	n_sample_pages leaf pages, we can estimate how many
 	there will be in index->stat_n_leaf_pages */

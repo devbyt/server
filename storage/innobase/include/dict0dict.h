@@ -2,7 +2,7 @@
 
 Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2013, 2015, MariaDB Corporation.
+Copyright (c) 2013, 2017, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -1821,6 +1821,15 @@ ibool
 dict_set_corrupted_by_space(
 /*========================*/
 	ulint		space_id);	/*!< in: space ID */
+
+/**********************************************************************//**
+Flags a table with specified space_id encrypted in the data dictionary
+cache
+@param[in]	space_id	Tablespace id */
+UNIV_INTERN
+void
+dict_set_encrypted_by_space(
+	ulint	space_id);
 
 /********************************************************************//**
 Validate the table flags.
