@@ -6378,7 +6378,7 @@ static int get_schema_constraints_record(THD *thd, TABLE_LIST *tables,
     // Table check constraints
     for ( uint i = 0; i < show_table->s->table_check_constraints; i++ )
     {
-        Virtual_column_info *check = show_table->s->check_constraints[ i ];
+        Virtual_column_info *check = show_table->check_constraints[ i ];
 
         if ( store_constraints( thd, table, db_name, table_name, check->name.str,
                                 check->name.length,

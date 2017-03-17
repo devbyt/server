@@ -1,5 +1,5 @@
 # Table with 2 column-level check constraints and 1 table-level check constraint
-create or replace table t1( c1 int, c2 int, c3 int, primary key( c1 ), constraint `c1_min` check( c1 > 0 ), constraint `c3_min` check( c3 > 0 ), constraint `range`  check( ( c2 >= c1 ) and ( c2 <= c3 ) ) );
+create or replace table t1( c1 int check( c1 > 0 ), c2 int check( c2 > 0 ), c3 int, constraint `range`  check( ( c3 >= c1 ) and ( c3 <= c2 ) ), primary key( c1 ) );
 show create table t1;
 
 # Show all constraints, including check constraints
